@@ -1,6 +1,6 @@
-# Coastline Drifters — Architecture & Technical Deep Dive
+# Coastline Drifters 
+Coastline Drifters is a highly decoupled, real-time web application. It leverages the raw performance of WebGL (Three.js) and WebAssembly (Rapier) for rendering and physics, while utilizing Colyseus over WebSockets to maintain a synchronized, low-latency shared reality for multiple users without relying on heavy traditional REST APIs.
 
-Welcome to the architectural overview for **Coastline Drifters**. This document is structured to provide a comprehensive, high-level breakdown of the tech stack, data flow, APIs, and overall system design of the project, suitable for a technical discussion at a top-tier tech company.
 
 ---
 
