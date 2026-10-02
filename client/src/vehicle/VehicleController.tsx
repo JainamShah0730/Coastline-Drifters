@@ -2,6 +2,7 @@ import { useRef, useEffect, useState, useMemo } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { RigidBody, RapierRigidBody, useRapier } from '@react-three/rapier';
+import { Html } from '@react-three/drei';
 import type * as Colyseus from 'colyseus.js';
 import { NODES, TREE_POSITIONS, BOULDER_POSITIONS, FENCE_POSITIONS, getTerrainHeight, ROAD_WAYPOINTS, distToSegmentSquared, STREET_LIGHT_POSITIONS, DENSE_ROAD_POINTS } from '../world/constants';
 
@@ -12,6 +13,7 @@ interface VehicleControllerProps {
   isBusy?: boolean;
   isNight?: boolean;
   color?: string;
+  playerName?: string;
 }
 
 // ── Keyboard state hook ──────────────────────────────────────────
@@ -317,7 +319,7 @@ function VehicleBody({ hasHeadlights = false, activeNode = "", color = "#e8a020"
 }
 
 // ── Main vehicle controller ───────────────────────────────────────
-export function VehicleController({ vehicleId, room, isDriver, isBusy = false, isNight = false, color = "#e8a020" }: VehicleControllerProps) {
+export function VehicleController({ vehicleId, room, isDriver, isBusy = false, isNight = false, color = "#e8a020", playerName }: VehicleControllerProps) {
   const rbRef  = useRef<RapierRigidBody>(null);
   const { camera } = useThree();
   const [headlights, setHeadlights] = useState(isNight);
@@ -701,6 +703,13 @@ export function VehicleController({ vehicleId, room, isDriver, isBusy = false, i
     <>
       <RigidBody ref={rbRef} type="kinematicPosition" colliders="cuboid" position={[pos.current.x, pos.current.y, pos.current.z]}>
         <VehicleBody hasHeadlights={headlights} activeNode={currentActiveNode.current} color={color} />
+        {playerName && (
+          <Html position={[0, 2.5, 0]} center sprite zIndexRange={[100, 0]}>
+            <div className="px-2 py-1 bg-black/60 text-white text-xs rounded-md whitespace-nowrap font-bold border border-white/20 backdrop-blur-sm pointer-events-none">
+              {playerName}
+            </div>
+          </Html>
+        )}
       </RigidBody>
 
       {/* Dust Particle System */}
@@ -720,7 +729,7 @@ interface RemoteVehicleState {
   rotationY: number; speed: number; color?: string;
 }
 
-export function RemoteVehicle({ state }: { state: RemoteVehicleState }) {
+export function RemoteVehicle({ state, playerName }: { state: RemoteVehicleState, playerName?: string }) {
   const rbRef = useRef<RapierRigidBody>(null);
   const current = useRef({ ...state });
 
@@ -741,6 +750,13 @@ export function RemoteVehicle({ state }: { state: RemoteVehicleState }) {
   return (
     <RigidBody ref={rbRef} type="kinematicPosition" colliders="cuboid" position={[state.x, state.y, state.z]}>
       <VehicleBody color={state.color} />
+      {playerName && (
+        <Html position={[0, 2.5, 0]} center sprite zIndexRange={[100, 0]}>
+          <div className="px-2 py-1 bg-black/60 text-white text-xs rounded-md whitespace-nowrap font-bold border border-white/20 backdrop-blur-sm pointer-events-none">
+            {playerName}
+          </div>
+        </Html>
+      )}
     </RigidBody>
   );
 }

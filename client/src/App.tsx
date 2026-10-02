@@ -805,10 +805,13 @@ function Scene({ room, vehicles, isDriver, nodes, isBusy, targetNode }: {
         {/* Vehicles */}
         {Object.entries(vehicles).map(([vid, v]) => {
           const isLocalDriver = isDriver && v.driverSessionId === room.sessionId;
+          const driver = players[v.driverSessionId];
+          const playerName = driver ? driver.name : '';
+          
           if (isLocalDriver) {
-            return <VehicleController key={vid} vehicleId={vid} room={room} isDriver isBusy={isBusy} isNight={isNight} color={v.color} />;
+            return <VehicleController key={vid} vehicleId={vid} room={room} isDriver isBusy={isBusy} isNight={isNight} color={v.color} playerName={playerName} />;
           }
-          return <RemoteVehicle key={vid} state={v} />;
+          return <RemoteVehicle key={vid} state={v} playerName={playerName} />;
         })}
       </Physics>
     </>
@@ -965,6 +968,9 @@ export default function App() {
       });
 
       // ── Vehicles sync ─────────────────────────────────────────
+      joined.state.vehicles.onRemove((_v: any, vid: string) => {
+        setVehicles(prev => { const n = { ...prev }; delete n[vid]; return n; });
+      });
       joined.state.vehicles.onAdd((v: any, vid: string) => {
         setVehicles(prev => ({ ...prev, [vid]: { x: v.x, y: v.y, z: v.z, rotationY: v.rotationY, speed: v.speed, driverSessionId: v.driverSessionId, color: v.color } }));
         v.onChange((changes: any[]) => {
