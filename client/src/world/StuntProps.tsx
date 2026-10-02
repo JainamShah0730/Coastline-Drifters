@@ -1,4 +1,3 @@
-import React from 'react';
 import { RigidBody } from '@react-three/rapier';
 import { getTerrainHeight } from './constants';
 

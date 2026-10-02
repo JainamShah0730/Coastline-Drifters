@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback, Suspense } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { Sky, Environment } from '@react-three/drei';
+import { Sky } from '@react-three/drei';
 import { Physics } from '@react-three/rapier';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as Colyseus from 'colyseus.js';
@@ -19,7 +19,6 @@ import { SurfingMinigame } from './ui/SurfingMinigame';
 import { VehicleController, RemoteVehicle } from './vehicle/VehicleController';
 
 const COLYSEUS_URL = import.meta.env.VITE_SERVER_URL || `ws://${window.location.hostname || 'localhost'}:2567`;
-const BOLLYWOOD_URL = "https://stream.zeno.fm/60ef4p33vxquv";
 
 // ── Horn Sound ────────────────────────────────────────────────────
 const playHornSound = () => {
@@ -705,12 +704,10 @@ function Scene({ room, vehicles, isDriver, nodes, isBusy, targetNode }: {
   const ambientLightRef = useRef<THREE.AmbientLight>(null);
   const skyRef = useRef<any>(null);
   
-  const timeRef = useRef(Math.PI / 4); // Start at morning
   const [isNight, setIsNight] = useState(false);
 
-  useFrame((state, delta) => {
+  useFrame(() => {
     // Golden Hour locked lighting
-    const elevation = 0.15; // low angle for long shadows
     const sunX = 80;
     const sunY = 15;
     
