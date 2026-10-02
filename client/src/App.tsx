@@ -294,6 +294,9 @@ function LobbyScreen({ onJoin }: { onJoin: (name: string, color: string) => void
         <p className="text-[10px] mt-8 font-bold tracking-[0.1em] text-white/30 uppercase">
           WASD to drive · SPACE to brake
         </p>
+        <p className="text-[10px] mt-3 font-bold tracking-[0.1em] text-yellow-400/70 uppercase">
+          Desktop / Laptop Recommended · Mobile Not Supported
+        </p>
       </motion.div>
     </motion.div>
   );
