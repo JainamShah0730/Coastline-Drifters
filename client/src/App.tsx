@@ -692,9 +692,10 @@ function HUD({ room, players, vehicles, isDriver, onEnterVehicle, catchLog, surf
 }
 
 // ── Scene ─────────────────────────────────────────────────────────
-function Scene({ room, vehicles, isDriver, nodes, isBusy, targetNode }: {
+function Scene({ room, vehicles, players, isDriver, nodes, isBusy, targetNode }: {
   room: Colyseus.Room;
   vehicles: Record<string, VehicleState>;
+  players: Record<string, PlayerState>;
   isDriver: boolean;
   nodes: Record<string, { active: boolean, count: number }>;
   isBusy: boolean;
@@ -1098,7 +1099,7 @@ export default function App() {
             style={{ position: 'absolute', inset: 0 }}
           >
             <Suspense fallback={null}>
-              <Scene room={room} vehicles={vehicles} isDriver={isDriver} nodes={nodes} isBusy={isFishing || isSurfing || isScavenging} targetNode={targetNode} />
+              <Scene room={room} vehicles={vehicles} players={players} isDriver={isDriver} nodes={nodes} isBusy={isFishing || isSurfing || isScavenging} targetNode={targetNode} />
             </Suspense>
           </Canvas>
         </>
