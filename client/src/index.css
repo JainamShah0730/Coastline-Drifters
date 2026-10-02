@@ -1,0 +1,321 @@
+@import "tailwindcss";
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  /* ── Coastal Palette ─────────────────────────────────── */
+  --coast-deep-ocean: #1a4a6b;
+  --coast-seafoam: #7ec8b8;
+  --coast-sand: #f0e4c8;
+  --coast-warm-coral: #eb7254;
+  --coast-sunset-gold: #f4a940;
+  --coast-driftwood: #8b7355;
+  --coast-sky-blue: #a8d8ea;
+  --coast-pine: #2d6a42;
+  --coast-foam: #d4ebe8;
+
+  /* ── UI Surfaces (Premium Glassmorphism) ─────────────── */
+  --ui-panel-bg: linear-gradient(135deg, rgba(26, 74, 107, 0.45) 0%, rgba(10, 58, 90, 0.6) 100%);
+  --ui-panel-bg-warm: linear-gradient(135deg, rgba(240, 228, 200, 0.35) 0%, rgba(220, 200, 160, 0.5) 100%);
+  --ui-panel-border: rgba(126, 200, 184, 0.4);
+  --ui-panel-border-warm: rgba(244, 169, 64, 0.4);
+  --ui-panel-shadow: 0 12px 40px rgba(0, 0, 0, 0.25), inset 0 1px 1px rgba(255, 255, 255, 0.15);
+
+  /* ── Signpost (interaction prompt) ───────────────────── */
+  --signpost-bg: linear-gradient(135deg, rgba(139, 115, 85, 0.9) 0%, rgba(90, 74, 48, 0.95) 100%);
+  --signpost-border: rgba(240, 228, 200, 0.3);
+  --signpost-text: #f0e4c8;
+
+  /* ── Typography ──────────────────────────────────────── */
+  --font-display: 'Outfit', sans-serif;
+  --font-handwritten: 'Caveat', cursive;
+}
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--font-display);
+}
+
+/* ── UI Panel Classes — Premium Dark Glass ────────── */
+.coast-panel {
+  background: linear-gradient(145deg, rgba(8, 32, 56, 0.88) 0%, rgba(12, 42, 68, 0.92) 100%);
+  backdrop-filter: blur(24px) saturate(1.6);
+  -webkit-backdrop-filter: blur(24px) saturate(1.6);
+  border: 1px solid rgba(126, 200, 184, 0.18);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.45),
+    0 2px 8px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.coast-panel:hover {
+  border-color: rgba(126, 200, 184, 0.35);
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.5),
+    0 4px 12px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  transform: translateY(-1px);
+}
+
+.coast-panel-warm {
+  background: linear-gradient(145deg, rgba(42, 32, 18, 0.88) 0%, rgba(56, 40, 20, 0.92) 100%);
+  backdrop-filter: blur(24px) saturate(1.6);
+  -webkit-backdrop-filter: blur(24px) saturate(1.6);
+  border: 1px solid rgba(244, 169, 64, 0.25);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.45),
+    0 2px 8px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ── Signpost prompt ─────────────────────────────────── */
+.signpost {
+  background: var(--signpost-bg);
+  border: 2px solid var(--signpost-border);
+  color: var(--signpost-text);
+  border-radius: 0.6rem 1rem 1rem 0.6rem;
+  box-shadow: 0 6px 20px rgba(90, 74, 48, 0.4), inset 0 1px 0 rgba(255,255,255,0.15);
+  position: relative;
+}
+
+.signpost::before {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 0;
+  height: 0;
+  border-top: 8px solid transparent;
+  border-bottom: 8px solid transparent;
+  border-right: 8px solid var(--signpost-border);
+}
+
+/* ── Postcard style (for catch log / leaderboard) ───── */
+.postcard {
+  background: linear-gradient(135deg, rgba(12, 40, 60, 0.85) 0%, rgba(18, 50, 72, 0.9) 100%);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  border: 1px solid rgba(126, 200, 184, 0.15);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+  border-radius: 12px;
+}
+
+/* ── Road sign style (for controls reminder) ───────── */
+.road-sign {
+  background: linear-gradient(135deg, rgba(8, 28, 48, 0.9) 0%, rgba(14, 38, 58, 0.92) 100%);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  border: 1px solid rgba(126, 200, 184, 0.2);
+  border-radius: 10px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255,255,255,0.06);
+}
+
+/* ── Subtle wave animation for lobby ─────────────────── */
+@keyframes waveFloat {
+  0%, 100% { transform: translateY(0) scaleX(1); }
+  50% { transform: translateY(-4px) scaleX(1.02); }
+}
+
+.wave-float {
+  animation: waveFloat 3s ease-in-out infinite;
+}
+
+/* ── Fishing minigame depth meter ────────────────────── */
+.depth-meter {
+  background: linear-gradient(90deg, #0a3a5a 0%, #1a6a8a 50%, #0a3a5a 100%);
+  border: 1px solid rgba(126, 200, 184, 0.4);
+  border-radius: 9999px;
+  overflow: hidden;
+  position: relative;
+}
+
+.depth-meter::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0px,
+    transparent 8px,
+    rgba(126, 200, 184, 0.1) 8px,
+    rgba(126, 200, 184, 0.1) 10px
+  );
+}
+
+/* ── Surfing minigame wave bar ────────────────────────── */
+.wave-bar {
+  background: linear-gradient(90deg, #1a4a6b 0%, #2a7a9a 30%, #eb7254 70%, #f4a940 100%);
+  border: 1px solid rgba(244, 169, 64, 0.5);
+  border-radius: 9999px;
+  overflow: hidden;
+}
+
+/* ── HUD Vehicle Controls Bar ────────────────────── */
+.vehicle-controls-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
+.vehicle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 22px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: var(--font-display);
+  color: #ffffff;
+  letter-spacing: 0.02em;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  white-space: nowrap;
+  line-height: 1;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  user-select: none;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+.vehicle-btn:hover {
+  transform: translateY(-2px) scale(1.03);
+  box-shadow:
+    0 8px 28px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+.vehicle-btn:active {
+  transform: translateY(0) scale(0.97);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+.vehicle-btn .btn-icon {
+  font-size: 15px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* ── Radio Panel Fix ─────────────────────────────── */
+.radio-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.radio-panel .radio-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex: 1;
+  min-width: 0;
+}
+.radio-panel .radio-btn {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+.radio-panel .radio-btn:hover {
+  transform: scale(1.08);
+}
+.radio-panel .radio-btn:active {
+  transform: scale(0.92);
+}
+
+/* ── Contrast Helpers ────────────────────────────── */
+.text-contrast-dark {
+  color: #1A365D;
+  text-shadow: none;
+}
+.text-contrast-light {
+  color: #ffffff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4), 0 0 8px rgba(0, 0, 0, 0.15);
+}
+
+/* ── Pill Badge ──────────────────────────────────── */
+.pill-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+/* ── Node Banner ─────────────────────────────────── */
+.node-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 16px 36px;
+  border-radius: 9999px;
+  white-space: nowrap;
+  max-width: 90vw;
+  background: linear-gradient(145deg, rgba(42, 32, 18, 0.95) 0%, rgba(66, 48, 24, 0.98) 100%);
+  backdrop-filter: blur(24px) saturate(1.6);
+  -webkit-backdrop-filter: blur(24px) saturate(1.6);
+  border: 1px solid rgba(244, 169, 64, 0.4);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5), inset 0 2px 2px rgba(255, 255, 255, 0.1);
+}
+.node-banner .node-icon {
+  font-size: 26px;
+  line-height: 1;
+  flex-shrink: 0;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+}
+.node-banner .node-label {
+  font-weight: 900;
+  font-size: 22px;
+  letter-spacing: 0.04em;
+  font-family: var(--font-display);
+  background: linear-gradient(135deg, #f0e4c8 0%, #d4b878 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  line-height: 1;
+  filter: drop-shadow(0 2px 2px rgba(0,0,0,0.4));
+}
+.node-banner .interact-badge {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: 8px;
+  padding-left: 20px;
+  border-left: 2px solid rgba(244, 169, 64, 0.2);
+}
+.node-banner .interact-badge .key-hint {
+  background: linear-gradient(135deg, #f4a940 0%, #e67e22 100%);
+  color: #ffffff;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1;
+  box-shadow: 0 4px 12px rgba(244, 169, 64, 0.4), inset 0 2px 2px rgba(255,255,255,0.3);
+  text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+}
