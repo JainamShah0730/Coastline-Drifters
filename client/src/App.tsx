@@ -706,7 +706,7 @@ function Scene({ room, vehicles, isDriver, nodes, isBusy, targetNode }: {
   
   const [isNight, setIsNight] = useState(false);
 
-  useFrame(() => {
+  useFrame((state) => {
     // Golden Hour locked lighting
     const sunX = 80;
     const sunY = 15;
