@@ -4,7 +4,8 @@ import * as THREE from 'three';
 import { RigidBody, RapierRigidBody, useRapier } from '@react-three/rapier';
 import { Html } from '@react-three/drei';
 import type * as Colyseus from 'colyseus.js';
-import { NODES, TREE_POSITIONS, BOULDER_POSITIONS, FENCE_POSITIONS, getTerrainHeight, ROAD_WAYPOINTS, distToSegmentSquared, STREET_LIGHT_POSITIONS, DENSE_ROAD_POINTS } from '../world/constants';
+import { NODES, TREE_POSITIONS, BOULDER_POSITIONS, FENCE_POSITIONS, getTerrainHeight, ROAD_WAYPOINTS, roadDistSq, STREET_LIGHT_POSITIONS } from '../world/constants';
+import { CircleGrid } from '../world/spatial';
 
 interface VehicleControllerProps {
   vehicleId: string;
@@ -62,10 +63,10 @@ function useKeys(isBusy: boolean) {
 }
 
 // ── Constants ─────────────────────────────────────────────────────
-const MAX_SPEED      = 100;  // m/s
-const ACCELERATION   = 60;
-const BRAKE_FORCE    = 150;
-const COAST_DRAG     = 30; // speed lost per second when coasting
+const MAX_SPEED      = 28;  // m/s
+const ACCELERATION   = 18;
+const BRAKE_FORCE    = 40;
+const COAST_DRAG     = 10; // speed lost per second when coasting
 const TURN_SPEED     = 2.2;  // radians/s at full speed
 
 
@@ -79,11 +80,11 @@ const OBSTACLES: { cx: number; cz: number; r: number }[] = [
   { cx: 180, cz: 151, r: 3 }, // Dock middle
   { cx: 180, cz: 156, r: 3 }, // Dock start (shore)
   // Bonfire Circle
-  { cx: -100, cz: 200, r: 12 },
+  { cx: -100, cz: 200, r: 2 },
   // Campsite Tents
-  { cx: -220, cz: 80, r: 8 },
+  { cx: -220, cz: 80, r: 2 },
   // Lighthouse keeper's cottage
-  { cx: 390, cz: 385, r: 8 },
+  { cx: 390, cz: 385, r: 2 },
   // Driftwood Village cottages
   { cx: 290, cz: -205, r: 6 },
   { cx: 308, cz: -208, r: 6 },
@@ -107,7 +108,7 @@ const OBSTACLES: { cx: number; cz: number; r: number }[] = [
   // Street Lights
   ...STREET_LIGHT_POSITIONS.map(l => ({ cx: l.pos[0], cz: l.pos[2], r: 0.5 })),
   // Gas station
-  { cx: 20, cz: -20, r: 15 },
+  { cx: 20, cz: -20, r: 4 },
   // Fences
   ...(() => {
     const obs: { cx: number; cz: number; r: number }[] = [];
@@ -140,6 +141,23 @@ const OBSTACLES: { cx: number; cz: number; r: number }[] = [
     return obs;
   })()
 ];
+
+// DSA: spatial hash over the ~3200 obstacles. Each frame we only test the handful
+// stored in the car's cell instead of every obstacle (O(n) -> O(1) average).
+const CAR_RADIUS = 0.8;
+const OBSTACLE_GRID = new CircleGrid(OBSTACLES, 32, CAR_RADIUS);
+
+// Scratch objects reused every frame (no per-frame garbage => no GC stutter)
+const _fwd = { x: 0, z: 0 };
+const _vA = new THREE.Vector3();
+const _camTarget = new THREE.Vector3();
+const _camOrigin = new THREE.Vector3();
+const _camDir = new THREE.Vector3();
+const _camFinal = new THREE.Vector3();
+const _look = new THREE.Vector3();
+const _euler = new THREE.Euler(0, 0, 0, 'YXZ');
+const _quat = new THREE.Quaternion();
+const _rayDir = new THREE.Vector3(0, -1, 0);
 
 
 // ── Audio helpers ─────────────────────────────────────────────────
@@ -296,8 +314,8 @@ function VehicleBody({ hasHeadlights = false, activeNode = "", color = "#e8a020"
         <group>
           <primitive object={target1} />
           <primitive object={target2} />
-          <spotLight position={[-0.8, 0.8, -2.0]} target={target1} angle={0.7} penumbra={0.4} intensity={250} color="#ffffee" distance={200} castShadow />
-          <spotLight position={[0.8, 0.8, -2.0]} target={target2} angle={0.7} penumbra={0.4} intensity={250} color="#ffffee" distance={200} castShadow />
+          <spotLight position={[-0.8, 0.8, -2.0]} target={target1} angle={0.7} penumbra={0.4} intensity={250} color="#ffffee" distance={200} />
+          <spotLight position={[0.8, 0.8, -2.0]} target={target2} angle={0.7} penumbra={0.4} intensity={250} color="#ffffee" distance={200} />
         </group>
       )}
 
@@ -321,6 +339,7 @@ function VehicleBody({ hasHeadlights = false, activeNode = "", color = "#e8a020"
 // ── Main vehicle controller ───────────────────────────────────────
 export function VehicleController({ vehicleId, room, isDriver, isBusy = false, isNight = false, color = "#e8a020", playerName }: VehicleControllerProps) {
   const rbRef  = useRef<RapierRigidBody>(null);
+  const visualRef = useRef<THREE.Group>(null);
   const { camera } = useThree();
   const [headlights, setHeadlights] = useState(isNight);
 
@@ -342,6 +361,8 @@ export function VehicleController({ vehicleId, room, isDriver, isBusy = false, i
     Array.from({length: PARTICLE_COUNT}, () => ({ pos: new THREE.Vector3(), vel: new THREE.Vector3(), life: 0 }))
   );
   const dustIndex = useRef(0);
+  const camRayFrame = useRef(0);
+  const camSafeDist = useRef(Infinity);
   const dummy = useMemo(() => new THREE.Object3D(), []);
 
   useEffect(() => {
@@ -392,19 +413,18 @@ export function VehicleController({ vehicleId, room, isDriver, isBusy = false, i
     }
 
     // ── Move position ───────────────────────────────────────────
-    const forward = new THREE.Vector3(
-      -Math.sin(yaw.current),
-      0,
-      -Math.cos(yaw.current)
-    );
+    const forward = _fwd;
+    forward.x = -Math.sin(yaw.current);
+    forward.z = -Math.cos(yaw.current);
     const newX = pos.current.x + forward.x * vel.current * dt;
     const newZ = pos.current.z + forward.z * vel.current * dt;
 
     // ── Collision detection ─────────────────────────────────────
-    const CAR_RADIUS = 0.8;
     let blocked = false;
 
-    for (const obs of OBSTACLES) {
+    const nearby = OBSTACLE_GRID.query(newX, newZ);
+    for (let oi = 0; oi < nearby.length; oi++) {
+      const obs = OBSTACLES[nearby[oi]];
       const dx = newX - obs.cx;
       const dz = newZ - obs.cz;
       const dist = Math.sqrt(dx * dx + dz * dz);
@@ -458,8 +478,8 @@ export function VehicleController({ vehicleId, room, isDriver, isBusy = false, i
 
     // ── Island boundary clamping (circular, matching actual island shape) ──
     // The island terrain is ~460 units radius. We restrict driving to ~420 units.
-    const ISLAND_RADIUS_SOFT = 380;   // start slowing down
-    const ISLAND_RADIUS_HARD = 420;   // absolute stop
+    const ISLAND_RADIUS_SOFT = 560;   // start slowing down
+    const ISLAND_RADIUS_HARD = 600;   // absolute stop
     const distFromCenter = Math.sqrt(pos.current.x * pos.current.x + pos.current.z * pos.current.z);
     
     if (distFromCenter > ISLAND_RADIUS_SOFT) {
@@ -485,19 +505,12 @@ export function VehicleController({ vehicleId, room, isDriver, isBusy = false, i
       let floor = Math.max(baseTerrainY, -0.3);
       
       // Account for road surface offset — the road mesh sits 0.1 above terrain
-      let minRdSq = Infinity;
-      for (let j = 0; j < DENSE_ROAD_POINTS.length; j++) {
-        const wp1 = DENSE_ROAD_POINTS[j];
-        const wp2 = DENSE_ROAD_POINTS[(j + 1) % DENSE_ROAD_POINTS.length];
-        const dSq = distToSegmentSquared(tx, tz, wp1.x, wp1.z, wp2.x, wp2.z);
-        if (dSq < minRdSq) minRdSq = dSq;
+      if (roadDistSq(tx, tz) < 49) { // within ~7 units of road centre
+        floor += 0.1;
       }
-      if (minRdSq < 49) { // Within ~7 units of road center (road is 13 wide)
-        floor += 0.1; // Match the road mesh surface offset
-      }
-      const rayOrigin = new THREE.Vector3(tx, Math.max(carY + 2, baseTerrainY + 2), tz);
-      const rayDir = new THREE.Vector3(0, -1, 0);
-      const ray = new rapier.Ray(rayOrigin, rayDir);
+      _vA.set(tx, Math.max(carY + 2, baseTerrainY + 2), tz);
+      const rayOrigin = _vA;
+      const ray = new rapier.Ray(rayOrigin, _rayDir);
       const hit = world.castRay(ray, 10, true);
       
       const hitRbHandle = hit?.collider?.parent()?.handle;
@@ -511,19 +524,11 @@ export function VehicleController({ vehicleId, room, isDriver, isBusy = false, i
     };
 
     const AXLE_OFFSET = 1.2;
-    const frontPos = new THREE.Vector3(
-      newX - Math.sin(yaw.current) * AXLE_OFFSET,
-      pos.current.y,
-      newZ - Math.cos(yaw.current) * AXLE_OFFSET
-    );
-    const rearPos = new THREE.Vector3(
-      newX + Math.sin(yaw.current) * AXLE_OFFSET,
-      pos.current.y,
-      newZ + Math.cos(yaw.current) * AXLE_OFFSET
-    );
+    const sinYaw = Math.sin(yaw.current);
+    const cosYaw = Math.cos(yaw.current);
 
-    const frontY = getFloorY(frontPos.x, frontPos.z, pos.current.y);
-    const rearY = getFloorY(rearPos.x, rearPos.z, pos.current.y);
+    const frontY = getFloorY(newX - sinYaw * AXLE_OFFSET, newZ - cosYaw * AXLE_OFFSET, pos.current.y);
+    const rearY = getFloorY(newX + sinYaw * AXLE_OFFSET, newZ + cosYaw * AXLE_OFFSET, pos.current.y);
     
     const floorY = (frontY + rearY) / 2;
     const targetPitch = Math.atan2(rearY - frontY, AXLE_OFFSET * 2);
@@ -543,13 +548,7 @@ export function VehicleController({ vehicleId, room, isDriver, isBusy = false, i
 
     // ── Dust Particles ──────────────────────────────────────────
     if (isDriver) {
-      let minRoadDistSq = Infinity;
-      for (let j = 0; j < ROAD_WAYPOINTS.length; j++) {
-        const wp1 = ROAD_WAYPOINTS[j];
-        const wp2 = ROAD_WAYPOINTS[(j + 1) % ROAD_WAYPOINTS.length];
-        const dSq = distToSegmentSquared(newX, newZ, wp1[0], wp1[1], wp2[0], wp2[1]);
-        if (dSq < minRoadDistSq) minRoadDistSq = dSq;
-      }
+      const minRoadDistSq = roadDistSq(newX, newZ);
       
       const isOffRoad = minRoadDistSq > 40; // Approx 6.3 units away from center
       
@@ -607,54 +606,61 @@ export function VehicleController({ vehicleId, room, isDriver, isBusy = false, i
     // ── Apply to physics body ───────────────────────────────────
     if (rbRef.current) {
       rbRef.current.setNextKinematicTranslation(pos.current);
-      const euler = new THREE.Euler(pitch.current, yaw.current, 0, 'YXZ');
-      rbRef.current.setNextKinematicRotation(new THREE.Quaternion().setFromEuler(euler));
+      _euler.set(pitch.current, yaw.current, 0, 'YXZ');
+      rbRef.current.setNextKinematicRotation(_quat.setFromEuler(_euler));
+    }
+    
+    // ── Apply to visual mesh (144Hz smooth) ─────────────────────
+    if (visualRef.current) {
+      visualRef.current.position.copy(pos.current);
+      visualRef.current.rotation.set(pitch.current, yaw.current, 0, 'YXZ');
     }
 
-    // ── Third-person camera follow ──────────────────────────────
-    const idealOffset = new THREE.Vector3(
-      Math.sin(yaw.current) * 12,
-      6,
-      Math.cos(yaw.current) * 12
-    );
-    // Extra safety: ensure idealOffset is valid
-    if (!Number.isFinite(idealOffset.x)) idealOffset.set(0, 6, 12);
-    
-    const camTarget = pos.current.clone().add(idealOffset);
+    // ── Third-person camera follow (scratch vectors: zero allocations) ──
+    const offX = Math.sin(yaw.current) * 12;
+    const offZ = Math.cos(yaw.current) * 12;
+    _camTarget.set(pos.current.x + offX, pos.current.y + 6, pos.current.z + offZ);
 
-    // Camera Collision (Spring Arm)
-    const camRayOrigin = pos.current.clone().add(new THREE.Vector3(0, 1.5, 0));
-    const camRayDir = idealOffset.clone().normalize();
-    const camRay = new rapier.Ray(camRayOrigin, camRayDir);
-    const maxCamDist = idealOffset.length();
-    
-    const camHit = world.castRay(camRay, maxCamDist, true);
-    let finalCamPos = camTarget;
-    
-    const camHitRbHandle = camHit?.collider?.parent()?.handle;
-    
-    if (camHit && camHit.collider && camHitRbHandle !== undefined && camHitRbHandle !== rbRef.current?.handle) {
-      // Obstacle detected between car and camera! Zoom in.
-      const safeDist = Math.max(3, (typeof (camHit as any).toi === 'number' ? (camHit as any).toi : maxCamDist) - 0.5); 
-      finalCamPos = camRayOrigin.clone().add(camRayDir.clone().multiplyScalar(safeDist)); // use clone to prevent mutating camRayDir
-    }
+    // Camera collision (spring arm)
+    _camOrigin.set(pos.current.x, pos.current.y + 1.5, pos.current.z);
+    _camDir.set(offX, 6, offZ);
+    const maxCamDist = _camDir.length();
+    _camDir.divideScalar(maxCamDist || 1);
 
-    if (!Number.isFinite(finalCamPos.x) || !Number.isFinite(finalCamPos.y) || !Number.isFinite(finalCamPos.z)) {
-      finalCamPos.copy(camTarget);
+    // Throttle the expensive WASM raycast to every 2nd frame; reuse the last answer between.
+    camRayFrame.current = (camRayFrame.current + 1) % 2;
+    if (camRayFrame.current === 0) {
+      const camHit = world.castRay(new rapier.Ray(_camOrigin, _camDir), maxCamDist, true);
+      const h = camHit?.collider?.parent()?.handle;
+      if (camHit && camHit.collider && h !== undefined && h !== rbRef.current?.handle) {
+        // Obstacle detected between car and camera! Zoom in.
+        const toi = typeof (camHit as any).toi === 'number' ? (camHit as any).toi : maxCamDist;
+        camSafeDist.current = Math.max(3, toi - 0.5);
+      } else {
+        camSafeDist.current = maxCamDist;
+      }
     }
-    if (!Number.isFinite(finalCamPos.x)) {
-      finalCamPos.set(0, 10, 0); // Absolute fallback
+    if (camSafeDist.current < maxCamDist) {
+      _camFinal.copy(_camDir).multiplyScalar(camSafeDist.current).add(_camOrigin);
+    } else {
+      _camFinal.copy(_camTarget);
+    }
+    if (!Number.isFinite(_camFinal.x) || !Number.isFinite(_camFinal.y) || !Number.isFinite(_camFinal.z)) {
+      _camFinal.copy(_camTarget);
+    }
+    if (!Number.isFinite(_camFinal.x)) {
+      _camFinal.set(0, 10, 0); // Absolute fallback
     }
 
     if (!Number.isFinite(camera.position.x) || !Number.isFinite(camera.position.y) || !Number.isFinite(camera.position.z)) {
-      camera.position.copy(finalCamPos); // Recover from NaN poisoning!
+      camera.position.copy(_camFinal); // Recover from NaN poisoning!
     } else {
-      camera.position.lerp(finalCamPos, 8 * dt);
+      camera.position.lerp(_camFinal, 8 * dt);
     }
 
-    const lookTarget = pos.current.clone().add(new THREE.Vector3(0, 1, 0));
-    if (Number.isFinite(lookTarget.x) && Number.isFinite(lookTarget.y) && Number.isFinite(lookTarget.z)) {
-      camera.lookAt(lookTarget);
+    _look.set(pos.current.x, pos.current.y + 1, pos.current.z);
+    if (Number.isFinite(_look.x) && Number.isFinite(_look.y) && Number.isFinite(_look.z)) {
+      camera.lookAt(_look);
     }
 
     // ── Prevent Camera from going under terrain ─────────────────
@@ -702,6 +708,10 @@ export function VehicleController({ vehicleId, room, isDriver, isBusy = false, i
   return (
     <>
       <RigidBody ref={rbRef} type="kinematicPosition" colliders="cuboid" position={[pos.current.x, pos.current.y, pos.current.z]}>
+        <mesh visible={false}><boxGeometry args={[1.5, 1, 3]}/></mesh>
+      </RigidBody>
+      
+      <group ref={visualRef} position={[pos.current.x, pos.current.y, pos.current.z]}>
         <VehicleBody hasHeadlights={headlights} activeNode={currentActiveNode.current} color={color} />
         {playerName && (
           <Html position={[0, 2.5, 0]} center sprite zIndexRange={[100, 0]}>
@@ -710,7 +720,7 @@ export function VehicleController({ vehicleId, room, isDriver, isBusy = false, i
             </div>
           </Html>
         )}
-      </RigidBody>
+      </group>
 
       {/* Dust Particle System */}
       {isDriver && (
@@ -731,6 +741,7 @@ interface RemoteVehicleState {
 
 export function RemoteVehicle({ state, playerName }: { state: RemoteVehicleState, playerName?: string }) {
   const rbRef = useRef<RapierRigidBody>(null);
+  const visualRef = useRef<THREE.Group>(null);
   const current = useRef({ ...state });
 
   useFrame((_s, delta) => {
@@ -745,18 +756,29 @@ export function RemoteVehicle({ state, playerName }: { state: RemoteVehicleState
       const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, current.current.rotationY, 0));
       rbRef.current.setNextKinematicRotation(q);
     }
+    
+    if (visualRef.current) {
+      visualRef.current.position.copy(current.current as any);
+      visualRef.current.rotation.set(0, current.current.rotationY, 0, 'YXZ');
+    }
   });
 
   return (
-    <RigidBody ref={rbRef} type="kinematicPosition" colliders="cuboid" position={[state.x, state.y, state.z]}>
-      <VehicleBody color={state.color} />
-      {playerName && (
-        <Html position={[0, 2.5, 0]} center sprite zIndexRange={[100, 0]}>
-          <div className="px-2 py-1 bg-black/60 text-white text-xs rounded-md whitespace-nowrap font-bold border border-white/20 backdrop-blur-sm pointer-events-none">
-            {playerName}
-          </div>
-        </Html>
-      )}
-    </RigidBody>
+    <>
+      <RigidBody ref={rbRef} type="kinematicPosition" colliders="cuboid" position={[state.x, state.y, state.z]}>
+        <mesh visible={false}><boxGeometry args={[1.5, 1, 3]}/></mesh>
+      </RigidBody>
+      
+      <group ref={visualRef} position={[state.x, state.y, state.z]}>
+        <VehicleBody color={state.color} />
+        {playerName && (
+          <Html position={[0, 2.5, 0]} center sprite zIndexRange={[100, 0]}>
+            <div className="px-2 py-1 bg-black/60 text-white text-xs rounded-md whitespace-nowrap font-bold border border-white/20 backdrop-blur-sm pointer-events-none">
+              {playerName}
+            </div>
+          </Html>
+        )}
+      </group>
+    </>
   );
 }

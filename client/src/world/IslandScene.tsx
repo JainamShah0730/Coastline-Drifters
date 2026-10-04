@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { useMemo, useRef, useLayoutEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { Html, Text } from '@react-three/drei';
@@ -11,6 +11,9 @@ import {
 } from './constants';
 
 // ── Ocean ────────────────────────────────────────────────────────
+const OCEAN_NIGHT = new THREE.Color('#021a28');
+const OCEAN_DAY = new THREE.Color('#0a5f85');
+
 export function Ocean({ isNight }: { isNight?: boolean }) {
   const meshRef = useRef<THREE.Mesh>(null);
   const geoRef = useRef<THREE.PlaneGeometry>(null);
@@ -23,8 +26,13 @@ export function Ocean({ isNight }: { isNight?: boolean }) {
     // We'll set up original positions after first render
   }, []);
 
+  const frame = useRef(0);
   useFrame(({ clock }) => {
     if (!geoRef.current) return;
+    // Waves are slow: updating the vertices at ~30 fps looks identical.
+    frame.current++;
+    if (frame.current % 2 !== 0) return;
+
     const geo = geoRef.current;
     const posAttr = geo.attributes.position;
 
@@ -34,24 +42,23 @@ export function Ocean({ isNight }: { isNight?: boolean }) {
 
     const time = clock.getElapsedTime() * 0.6;
     const orig = originalPositions.current;
+    const arr = posAttr.array as Float32Array;
 
-    for (let i = 0; i < posAttr.count; i++) {
+    for (let i = 0, n = posAttr.count; i < n; i++) {
       const ox = orig[i * 3];
       const oy = orig[i * 3 + 1];
-      posAttr.array[i * 3 + 2] = (
+      arr[i * 3 + 2] = (
         Math.sin(ox * 0.02 + time) * 0.3 +
         Math.sin(oy * 0.03 + time * 1.3) * 0.2 +
         Math.sin((ox + oy) * 0.015 + time * 0.7) * 0.1
       );
     }
     posAttr.needsUpdate = true;
-    if (geoRef.current) {
-      geoRef.current.computeVertexNormals();
-    }
+    // Normals are the expensive part — recompute rarely.
+    if (frame.current % 8 === 0) geo.computeVertexNormals();
 
     if (matRef.current) {
-      const targetColor = isNight ? new THREE.Color("#021a28") : new THREE.Color("#0a5f85");
-      matRef.current.color.lerp(targetColor, 0.05);
+      matRef.current.color.lerp(isNight ? OCEAN_NIGHT : OCEAN_DAY, 0.05);
     }
   });
 
@@ -195,14 +202,11 @@ export function StreetLights({ isNight }: { isNight: boolean }) {
              <boxGeometry args={[0.6, 0.2, 0.6]} />
              <meshStandardMaterial color={isNight ? "#ffffee" : "#222"} emissive={isNight ? "#ffffee" : "#000"} emissiveIntensity={isNight ? 5 : 0} />
            </mesh>
-           {/* Actual Light Source */}
-           <pointLight
-             position={[0, 7.5, 2.8]}
-             intensity={isNight ? 25 : 0}
-             distance={40}
-             decay={2}
-             color="#ffffee"
-           />
+           {/* Actual Light Source — only mounted at night: three.js loops over every
+               light per pixel even at intensity 0, so 70 idle lights are expensive. */}
+           {isNight && (
+             <pointLight position={[0, 7.5, 2.8]} intensity={25} distance={40} decay={2} color="#ffffee" />
+           )}
         </group>
       ))}
     </group>
@@ -419,136 +423,198 @@ export function Road() {
   );
 }
 
-// ── Tree variants ────────────────────────────────────────────────
-function PineTree({ position, scale = 1 }: { position: [number, number, number], scale?: number }) {
+// ── Instanced scatter (trees / rocks / bushes / ground patches) ──────────
+// Before: ~4,800 React components, >10,000 draw calls, getTerrainHeight() re-run on every re-render.
+// Now: one InstancedMesh per part type (~20 draw calls) and heights computed once (useMemo).
+const _q = new THREE.Quaternion();
+const _e = new THREE.Euler();
+const _p = new THREE.Vector3();
+const _s = new THREE.Vector3();
+
+function composeMatrix(
+  px: number, py: number, pz: number,
+  rx: number, ry: number, rz: number,
+  sx: number, sy: number, sz: number,
+): THREE.Matrix4 {
+  _e.set(rx, ry, rz);
+  _q.setFromEuler(_e);
+  _p.set(px, py, pz);
+  _s.set(sx, sy, sz);
+  return new THREE.Matrix4().compose(_p, _q, _s);
+}
+
+interface InstancedSetProps {
+  geometry: THREE.BufferGeometry;
+  matrices: THREE.Matrix4[];
+  colors?: THREE.Color[];
+  color?: string;
+  roughness?: number;
+  flatShading?: boolean;
+  transparent?: boolean;
+  opacity?: number;
+  depthWrite?: boolean;
+  castShadow?: boolean;
+  receiveShadow?: boolean;
+}
+
+function InstancedSet({
+  geometry, matrices, colors, color = '#ffffff', roughness = 1, flatShading = true,
+  transparent = false, opacity = 1, depthWrite = true, castShadow = false, receiveShadow = false,
+}: InstancedSetProps) {
+  const ref = useRef<THREE.InstancedMesh>(null);
+
+  useLayoutEffect(() => {
+    const mesh = ref.current;
+    if (!mesh) return;
+    for (let i = 0; i < matrices.length; i++) {
+      mesh.setMatrixAt(i, matrices[i]);
+      if (colors) mesh.setColorAt(i, colors[i]);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    mesh.computeBoundingSphere(); // so frustum culling uses the real extent
+  }, [matrices, colors]);
+
+  if (matrices.length === 0) return null;
   return (
-    <group position={position} scale={scale}>
-      <mesh position={[0, 1.2, 0]} castShadow>
-        <cylinderGeometry args={[0.3, 0.5, 2.4, 6]} />
-        <meshStandardMaterial color="#4a3112" roughness={1} flatShading />
-      </mesh>
-      <mesh position={[0, 3.2, 0]} castShadow>
-        <coneGeometry args={[2.2, 3, 7]} />
-        <meshStandardMaterial color="#1f4d30" roughness={1} flatShading />
-      </mesh>
-      <mesh position={[0, 4.8, 0]} castShadow>
-        <coneGeometry args={[1.4, 2.5, 7]} />
-        <meshStandardMaterial color="#2a6340" roughness={1} flatShading />
-      </mesh>
-    </group>
+    <instancedMesh
+      key={matrices.length}
+      ref={ref}
+      args={[undefined as any, undefined as any, matrices.length]}
+      castShadow={castShadow}
+      receiveShadow={receiveShadow}
+    >
+      <primitive object={geometry} attach="geometry" />
+      <meshStandardMaterial
+        color={color}
+        roughness={roughness}
+        flatShading={flatShading}
+        transparent={transparent}
+        opacity={opacity}
+        depthWrite={depthWrite}
+      />
+    </instancedMesh>
   );
 }
 
-function BroadTree({ position, scale = 1 }: { position: [number, number, number], scale?: number }) {
-  return (
-    <group position={position} scale={scale}>
-      <mesh position={[0, 1.5, 0]} castShadow>
-        <cylinderGeometry args={[0.4, 0.6, 3, 6]} />
-        <meshStandardMaterial color="#5a3a1a" roughness={1} flatShading />
-      </mesh>
-      <mesh position={[0, 3.8, 0]} castShadow>
-        <sphereGeometry args={[2.5, 8, 6]} />
-        <meshStandardMaterial color="#3a7a2e" roughness={0.9} flatShading />
-      </mesh>
-      <mesh position={[1.2, 3.2, 0.8]} castShadow>
-        <sphereGeometry args={[1.8, 7, 5]} />
-        <meshStandardMaterial color="#4a8a3e" roughness={0.9} flatShading />
-      </mesh>
-    </group>
-  );
+// Shared geometries (module-level: created once)
+const G = {
+  pineTrunk: new THREE.CylinderGeometry(0.3, 0.5, 2.4, 6),
+  pineLow: new THREE.ConeGeometry(2.2, 3, 7),
+  pineTop: new THREE.ConeGeometry(1.4, 2.5, 7),
+  broadTrunk: new THREE.CylinderGeometry(0.4, 0.6, 3, 6),
+  broadBig: new THREE.SphereGeometry(2.5, 8, 6),
+  broadSmall: new THREE.SphereGeometry(1.8, 7, 5),
+  palmTrunk: new THREE.CylinderGeometry(0.25, 0.4, 5, 6),
+  palmFrond: new THREE.ConeGeometry(0.8, 3, 4),
+  boulder: new THREE.DodecahedronGeometry(2, 0),
+  bush: new THREE.DodecahedronGeometry(1.5, 0),
+  patch: new THREE.CircleGeometry(1, 8),
+};
+
+interface TreePart {
+  geo: THREE.BufferGeometry;
+  color: string;
+  roughness: number;
+  pos: [number, number, number];
+  rot?: [number, number, number];
 }
 
-function PalmTree({ position, scale = 1 }: { position: [number, number, number], scale?: number }) {
-  return (
-    <group position={position} scale={scale}>
-      {/* Curved trunk */}
-      <mesh position={[0, 2, 0]} rotation={[0, 0, 0.15]} castShadow>
-        <cylinderGeometry args={[0.25, 0.4, 5, 6]} />
-        <meshStandardMaterial color="#6b5030" roughness={1} flatShading />
-      </mesh>
-      {/* Palm fronds — radiating cones */}
-      {[0, 1, 2, 3, 4, 5].map(i => (
-        <mesh key={i} position={[
-          Math.cos(i * Math.PI / 3) * 1.5,
-          4.5,
-          Math.sin(i * Math.PI / 3) * 1.5
-        ]} rotation={[0.8, i * Math.PI / 3, 0]} castShadow>
-          <coneGeometry args={[0.8, 3, 4]} />
-          <meshStandardMaterial color="#2d7a3a" roughness={0.9} flatShading />
-        </mesh>
-      ))}
-    </group>
-  );
-}
+const TREE_PARTS: TreePart[][] = [
+  // variant 0 — pine
+  [
+    { geo: G.pineTrunk, color: '#4a3112', roughness: 1, pos: [0, 1.2, 0] },
+    { geo: G.pineLow, color: '#1f4d30', roughness: 1, pos: [0, 3.2, 0] },
+    { geo: G.pineTop, color: '#2a6340', roughness: 1, pos: [0, 4.8, 0] },
+  ],
+  // variant 1 — broadleaf
+  [
+    { geo: G.broadTrunk, color: '#5a3a1a', roughness: 1, pos: [0, 1.5, 0] },
+    { geo: G.broadBig, color: '#3a7a2e', roughness: 0.9, pos: [0, 3.8, 0] },
+    { geo: G.broadSmall, color: '#4a8a3e', roughness: 0.9, pos: [1.2, 3.2, 0.8] },
+  ],
+  // variant 2 — palm
+  [
+    { geo: G.palmTrunk, color: '#6b5030', roughness: 1, pos: [0, 2, 0], rot: [0, 0, 0.15] },
+    ...[0, 1, 2, 3, 4, 5].map((i): TreePart => ({
+      geo: G.palmFrond,
+      color: '#2d7a3a',
+      roughness: 0.9,
+      pos: [Math.cos(i * Math.PI / 3) * 1.5, 4.5, Math.sin(i * Math.PI / 3) * 1.5],
+      rot: [0.8, i * Math.PI / 3, 0],
+    })),
+  ],
+];
 
 export function Trees() {
+  const groups = useMemo(() => {
+    const out: { geo: THREE.BufferGeometry; color: string; roughness: number; matrices: THREE.Matrix4[] }[] = [];
+    for (let v = 0; v < TREE_PARTS.length; v++) {
+      const trees = TREE_POSITIONS.filter(t => t.variant === v);
+      const heights = trees.map(t => getTerrainHeight(t.pos[0], t.pos[2]));
+      for (const part of TREE_PARTS[v]) {
+        const rot = part.rot ?? [0, 0, 0];
+        const local = composeMatrix(part.pos[0], part.pos[1], part.pos[2], rot[0], rot[1], rot[2], 1, 1, 1);
+        const matrices = trees.map((t, i) =>
+          composeMatrix(t.pos[0], heights[i], t.pos[2], 0, 0, 0, t.s, t.s, t.s).multiply(local)
+        );
+        // merge parts that share geometry+colour+roughness (e.g. the 6 palm fronds)
+        const existing = out.find(g => g.geo === part.geo && g.color === part.color && g.roughness === part.roughness);
+        if (existing) existing.matrices.push(...matrices);
+        else out.push({ geo: part.geo, color: part.color, roughness: part.roughness, matrices });
+      }
+    }
+    return out;
+  }, []);
+
   return (
     <>
-      {TREE_POSITIONS.map((t, i) => {
-        const y = getTerrainHeight(t.pos[0], t.pos[2]);
-        if (t.variant === 0) return <PineTree key={i} position={[t.pos[0], y, t.pos[2]]} scale={t.s} />;
-        if (t.variant === 1) return <BroadTree key={i} position={[t.pos[0], y, t.pos[2]]} scale={t.s} />;
-        return <PalmTree key={i} position={[t.pos[0], y, t.pos[2]]} scale={t.s} />;
-      })}
+      {groups.map((g, i) => (
+        <InstancedSet key={i} geometry={g.geo} color={g.color} roughness={g.roughness} matrices={g.matrices} castShadow />
+      ))}
     </>
   );
 }
 
 export function Boulders() {
-  return (
-    <>
-      {BOULDER_POSITIONS.map((b, i) => {
-        const y = getTerrainHeight(b.pos[0], b.pos[2]);
-        return (
-          <mesh key={i} position={[b.pos[0], y, b.pos[2]]} scale={b.s} rotation={b.rot} castShadow receiveShadow>
-            <dodecahedronGeometry args={[2, 0]} />
-            <meshStandardMaterial
-              color={i % 3 === 0 ? "#7a7e7f" : i % 3 === 1 ? "#8b8a82" : "#6e6d65"}
-              roughness={0.9}
-              flatShading
-            />
-          </mesh>
-        );
-      })}
-    </>
-  );
+  const { matrices, colors } = useMemo(() => {
+    const palette = ['#7a7e7f', '#8b8a82', '#6e6d65'].map(c => new THREE.Color(c));
+    return {
+      matrices: BOULDER_POSITIONS.map(b =>
+        composeMatrix(b.pos[0], getTerrainHeight(b.pos[0], b.pos[2]), b.pos[2], b.rot[0], b.rot[1], b.rot[2], b.s, b.s, b.s)),
+      colors: BOULDER_POSITIONS.map((_b, i) => palette[i % 3]),
+    };
+  }, []);
+  return <InstancedSet geometry={G.boulder} matrices={matrices} colors={colors} roughness={0.9} castShadow receiveShadow />;
 }
 
 export function Bushes() {
-  return (
-    <>
-      {BUSH_POSITIONS.map((b, i) => {
-        const y = getTerrainHeight(b.pos[0], b.pos[2]);
-        return (
-          <mesh key={i} position={[b.pos[0], y + 0.5, b.pos[2]]} scale={b.s} castShadow>
-            <dodecahedronGeometry args={[1.5, 0]} />
-            <meshStandardMaterial
-              color={i % 4 === 0 ? "#4a7530" : i % 4 === 1 ? "#558238" : i % 4 === 2 ? "#638c40" : "#3f6828"}
-              roughness={1}
-              flatShading
-            />
-          </mesh>
-        );
-      })}
-    </>
-  );
+  const { matrices, colors } = useMemo(() => {
+    const palette = ['#4a7530', '#558238', '#638c40', '#3f6828'].map(c => new THREE.Color(c));
+    return {
+      matrices: BUSH_POSITIONS.map(b =>
+        composeMatrix(b.pos[0], getTerrainHeight(b.pos[0], b.pos[2]) + 0.5, b.pos[2], 0, 0, 0, b.s, b.s, b.s)),
+      colors: BUSH_POSITIONS.map((_b, i) => palette[i % 4]),
+    };
+  }, []);
+  // Bushes are small: no shadow casting (big saving in the shadow pass)
+  return <InstancedSet geometry={G.bush} matrices={matrices} colors={colors} />;
 }
 
 export function GroundDetails() {
+  const { dirt, flowers } = useMemo(() => {
+    const dirt: THREE.Matrix4[] = [];
+    const flowers: THREE.Matrix4[] = [];
+    GROUND_PATCHES.forEach((p, i) => {
+      const m = composeMatrix(p.pos[0], getTerrainHeight(p.pos[0], p.pos[2]) + 0.03, p.pos[2], -Math.PI / 2, 0, i * 0.5, p.s, p.s, p.s);
+      (p.type === 'dirt' ? dirt : flowers).push(m);
+    });
+    return { dirt, flowers };
+  }, []);
   return (
     <>
-      {GROUND_PATCHES.map((p, i) => (
-        <mesh key={i} position={[p.pos[0], getTerrainHeight(p.pos[0], p.pos[2]) + 0.03, p.pos[2]]} rotation={[-Math.PI/2, 0, i * 0.5]} receiveShadow>
-          <circleGeometry args={[p.s, 8]} />
-          <meshStandardMaterial
-            color={p.type === 'dirt' ? "#a38b6d" : "#c48fb8"}
-            roughness={1}
-            transparent
-            opacity={p.type === 'dirt' ? 0.4 : 0.6}
-            depthWrite={false}
-          />
-        </mesh>
-      ))}
+      <InstancedSet geometry={G.patch} matrices={dirt} color="#a38b6d" flatShading={false} transparent opacity={0.4} depthWrite={false} receiveShadow />
+      <InstancedSet geometry={G.patch} matrices={flowers} color="#c48fb8" flatShading={false} transparent opacity={0.6} depthWrite={false} receiveShadow />
     </>
   );
 }
@@ -1186,7 +1252,7 @@ export function Bonfire({ active }: { active: boolean }) {
 
       {active && (
         <group>
-          <pointLight position={[0, 3, 0]} intensity={5} color="#ff9d00" distance={50} decay={2} castShadow />
+          <pointLight position={[0, 3, 0]} intensity={5} color="#ff9d00" distance={50} decay={2} />
           <pointLight position={[0, 1.5, 0]} intensity={3} color="#ff5500" distance={20} decay={2} />
           {/* Flame layers */}
           <mesh position={[0, 1.8, 0]}>

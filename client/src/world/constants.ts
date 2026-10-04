@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { SegmentGrid } from './spatial';
 
 export interface NodeDef {
   id: string;
@@ -64,13 +65,7 @@ export function getTerrainHeight(x: number, z: number): number {
   }
 
   // Flatten near roads (using segment distance instead of just waypoints)
-  let minRoadDistSq = Infinity;
-  for (let j = 0; j < DENSE_ROAD_POINTS.length; j++) {
-    const wp1 = DENSE_ROAD_POINTS[j];
-    const wp2 = DENSE_ROAD_POINTS[(j + 1) % DENSE_ROAD_POINTS.length];
-    const dSq = distToSegmentSquared(x, z, wp1.x, wp1.z, wp2.x, wp2.z);
-    if (dSq < minRoadDistSq) minRoadDistSq = dSq;
-  }
+  const minRoadDistSq = roadDistSq(x, z);
   
   let flattenFactor = 1.0;
   
@@ -100,15 +95,15 @@ export function getTerrainHeight(x: number, z: number): number {
   height *= flattenFactor;
 
   // Prevent terrain from rising above the ocean near the edges, and create a natural beach slope
-  if (dist > 350) {
-    if (dist < 420) {
+  if (dist > 520) {
+    if (dist < 560) {
       // Beach zone: gradual slope down to near water level
-      const beachFactor = (dist - 350) / 70;
+      const beachFactor = (dist - 520) / 40;
       const smoothBeach = beachFactor * beachFactor; // ease-in for gentle start
       height = height * (1 - smoothBeach) + 0.2 * smoothBeach;
-    } else if (dist < 480) {
+    } else if (dist < 600) {
       // Submerge zone: gently go below water
-      const subFactor = (dist - 420) / 60;
+      const subFactor = (dist - 560) / 40;
       height = 0.2 * (1 - subFactor) + (-1.0) * subFactor;
     } else {
       height = -1.0;
@@ -176,6 +171,13 @@ export const ROAD_CURVE = new THREE.CatmullRomCurve3(
   true, "catmullrom", 0.5
 );
 export const DENSE_ROAD_POINTS = ROAD_CURVE.getSpacedPoints(2000);
+// Spatial index over the road polyline. Cell size 32 => distances up to 32 are exact,
+// and every caller only compares against thresholds <= 30.
+const ROAD_INDEX = new SegmentGrid(DENSE_ROAD_POINTS, true, 32);
+/** Squared distance to the road centre-line (Infinity if farther than ~32 units). */
+export function roadDistSq(x: number, z: number): number {
+  return ROAD_INDEX.minDistSq(x, z);
+}
 
 export const VEHICLE_SPAWN: [number, number, number] = [0, 0.5, 0];
 
@@ -239,14 +241,7 @@ for (let i = 0; i < samples.length; i++) {
 
   const checkDist = (x: number, z: number, minDRoad: number) => {
     // Check road distance
-    let minDistSq = Infinity;
-    for(let i = 0; i < DENSE_ROAD_POINTS.length; i++) {
-      const wp1 = DENSE_ROAD_POINTS[i];
-      const wp2 = DENSE_ROAD_POINTS[(i + 1) % DENSE_ROAD_POINTS.length];
-      const dSq = distToSegmentSquared(x, z, wp1.x, wp1.z, wp2.x, wp2.z);
-      if(dSq < minDistSq) minDistSq = dSq;
-    }
-    const minDist = Math.sqrt(minDistSq);
+    const minDist = Math.sqrt(roadDistSq(x, z));
     if (minDist < minDRoad) return false;
 
     // Check exclusion zones

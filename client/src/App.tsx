@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback, Suspense } from 'react';
+import { useEffect, useRef, useState, useCallback, Suspense, memo } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { Sky } from '@react-three/drei';
 import { Physics } from '@react-three/rapier';
@@ -45,123 +45,6 @@ const playHornSound = () => {
   setTimeout(() => ctx.close(), 600);
 };
 
-// ── Fire Crackle Sound ────────────────────────────────────────────
-const startFireCrackleAudio = () => {
-  const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
-  if (!AudioContext) return { stop: () => {} };
-  const ctx = new AudioContext();
-  const bufferSize = ctx.sampleRate * 2;
-  const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-  const data = buffer.getChannelData(0);
-  for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
-  const noise = ctx.createBufferSource();
-  noise.buffer = buffer;
-  noise.loop = true;
-  const hp = ctx.createBiquadFilter();
-  hp.type = 'highpass';
-  hp.frequency.value = 1000;
-  const lp = ctx.createBiquadFilter();
-  lp.type = 'lowpass';
-  lp.frequency.value = 3000;
-  const gain = ctx.createGain();
-  gain.gain.value = 0.04;
-  noise.connect(hp).connect(lp).connect(gain).connect(ctx.destination);
-  noise.start();
-  // Random crackling pops
-  const pop = () => {
-    if (ctx.state === 'closed') return;
-    const t = ctx.currentTime;
-    gain.gain.setValueAtTime(0.04, t);
-    gain.gain.linearRampToValueAtTime(0.12, t + 0.02);
-    gain.gain.linearRampToValueAtTime(0.04, t + 0.08);
-  };
-  const id = setInterval(pop, 200 + Math.random() * 600);
-  return { stop: () => { clearInterval(id); ctx.close(); } };
-};
-
-// ── Synthetic Ambient Audio ───────────────────────────────────────
-const startOceanAudio = () => {
-  const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
-  if (!AudioContext) return null;
-  const ctx = new AudioContext();
-  const bufferSize = ctx.sampleRate * 2;
-  const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-  const data = buffer.getChannelData(0);
-  for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
-  const noiseSource = ctx.createBufferSource();
-  noiseSource.buffer = buffer;
-  noiseSource.loop = true;
-  const filter = ctx.createBiquadFilter();
-  filter.type = 'lowpass';
-  filter.frequency.value = 400;
-  const lfo = ctx.createOscillator();
-  lfo.frequency.value = 0.15;
-  const lfoGain = ctx.createGain();
-  lfoGain.gain.value = 50;
-  lfo.connect(lfoGain);
-  lfoGain.connect(filter.frequency);
-  const gain = ctx.createGain();
-  gain.gain.value = 0.05;
-  noiseSource.connect(filter).connect(gain).connect(ctx.destination);
-  noiseSource.start();
-  lfo.start();
-  return { stop: () => ctx.close() };
-};
-
-const startCricketsAudio = () => {
-  const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
-  if (!AudioContext) return { stop: () => {} };
-  const ctx = new AudioContext();
-  
-  const osc = ctx.createOscillator();
-  osc.type = 'triangle';
-  osc.frequency.value = 4500;
-  
-  const lfo = ctx.createOscillator();
-  lfo.type = 'square';
-  lfo.frequency.value = 15;
-
-  const lfoGain = ctx.createGain();
-  lfoGain.gain.value = 0.5;
-
-  const env = ctx.createGain();
-  env.gain.value = 0;
-
-  lfo.connect(lfoGain);
-  lfoGain.connect(env.gain);
-  osc.connect(env);
-
-  const filter = ctx.createBiquadFilter();
-  filter.type = 'highpass';
-  filter.frequency.value = 4000;
-  env.connect(filter);
-
-  const gain = ctx.createGain();
-  gain.gain.value = 0.03;
-  filter.connect(gain);
-  gain.connect(ctx.destination);
-
-  osc.start();
-  lfo.start();
-
-  const chirp = () => {
-    if (ctx.state === 'closed') return;
-    const t = ctx.currentTime;
-    env.gain.cancelScheduledValues(t);
-    env.gain.setValueAtTime(0, t);
-    env.gain.linearRampToValueAtTime(1, t + 0.1);
-    env.gain.linearRampToValueAtTime(0, t + 0.2);
-    
-    env.gain.setValueAtTime(0, t + 0.3);
-    env.gain.linearRampToValueAtTime(1, t + 0.4);
-    env.gain.linearRampToValueAtTime(0, t + 0.5);
-  };
-  
-  chirp();
-  const id = setInterval(chirp, 1000 + Math.random() * 500);
-
-  return { stop: () => { clearInterval(id); ctx.close(); } };
-};
 
 // ── Types ─────────────────────────────────────────────────────────
 interface VehicleState { x: number; y: number; z: number; rotationY: number; speed: number; driverSessionId: string; color: string; }
@@ -331,34 +214,6 @@ function HUD({ room, players, vehicles, isDriver, onEnterVehicle, catchLog, surf
   const markerX = isDriver && myVehicle ? myVehicle.x : (myPlayer?.x || 0);
   const markerZ = isDriver && myVehicle ? myVehicle.z : (myPlayer?.z || 0);
 
-  // ── Ambient Audio Proximity ───────────────────────────────────────
-  const oceanRef = useRef<{ stop: () => void } | null>(null);
-  const cricketsRef = useRef<{ stop: () => void } | null>(null);
-
-  useEffect(() => {
-    const surfNode = NODES.find(n => n.id === 'surf-beach');
-    const fishNode = NODES.find(n => n.id === 'fishing-dock');
-
-    if (surfNode) {
-      const dBeach = Math.sqrt((markerX - surfNode.position[0])**2 + (markerZ - surfNode.position[2])**2);
-      if (dBeach < 150 && !oceanRef.current) {
-        oceanRef.current = startOceanAudio();
-      } else if (dBeach >= 150 && oceanRef.current) {
-        oceanRef.current.stop();
-        oceanRef.current = null;
-      }
-    }
-
-    if (fishNode) {
-      const dPond = Math.sqrt((markerX - fishNode.position[0])**2 + (markerZ - fishNode.position[2])**2);
-      if (dPond < 80 && !cricketsRef.current) {
-        cricketsRef.current = startCricketsAudio();
-      } else if (dPond >= 80 && cricketsRef.current) {
-        cricketsRef.current.stop();
-        cricketsRef.current = null;
-      }
-    }
-  }, [markerX, markerZ]);
 
   return (
     <motion.div
@@ -694,6 +549,36 @@ function HUD({ room, players, vehicles, isDriver, onEnterVehicle, catchLog, surf
   );
 }
 
+const SUN_X = 80;
+const SUN_Y = 15;
+const IS_NIGHT = false; // golden hour is locked
+
+const StaticWorld = memo(function StaticWorld() {
+  return (
+    <>
+      <Ocean isNight={IS_NIGHT} />
+      <Island />
+      <Road />
+      <StreetLights isNight={IS_NIGHT} />
+      <Trees />
+      <Boulders />
+      <Bushes />
+      <GroundDetails />
+      <NodeMarkers />
+      <FishingDock />
+      <GasStation />
+      <SurfBeach />
+      <Lighthouse />
+      <DriftwoodVillage />
+      <Fences />
+      <Seagrass />
+      <WildflowerPatches />
+      <DriftwoodScatter />
+      <Clutter />
+    </>
+  );
+});
+
 // ── Scene ─────────────────────────────────────────────────────────
 function Scene({ room, vehicles, players, isDriver, nodes, isBusy, targetNode }: {
   room: Colyseus.Room;
@@ -708,39 +593,26 @@ function Scene({ room, vehicles, players, isDriver, nodes, isBusy, targetNode }:
   const ambientLightRef = useRef<THREE.AmbientLight>(null);
   const skyRef = useRef<any>(null);
   
-  const [isNight, setIsNight] = useState(false);
+  const isNight = IS_NIGHT;
+  const appliedRef = useRef(false);
 
   useFrame((state) => {
-    // Golden Hour locked lighting
-    const sunX = 80;
-    const sunY = 15;
-    
-    // Update Directional Light (Sun)
+    if (appliedRef.current) return;
     if (dirLightRef.current) {
-      dirLightRef.current.position.set(sunX, sunY, 50);
+      dirLightRef.current.position.set(SUN_X, SUN_Y, 50);
       dirLightRef.current.intensity = 2.5;
-      dirLightRef.current.color.lerp(new THREE.Color(0xffaa66), 0.1); // Warm orange/pink
+      dirLightRef.current.color.set(0xffaa66);
     }
-    
-    // Update Ambient Light
     if (ambientLightRef.current) {
       ambientLightRef.current.intensity = 0.5;
-      ambientLightRef.current.color.lerp(new THREE.Color(0xffddaa), 0.1); // Soft warm ambient
+      ambientLightRef.current.color.set(0xffddaa);
     }
-    
-    // Update Fog
     if (state.scene.fog instanceof THREE.Fog) {
-      state.scene.fog.color.lerp(new THREE.Color(0xffcc88), 0.1); // Sunset fog
+      state.scene.fog.color.set(0xffcc88);
     }
-
-    // Sky shader (Drei's Sky expects sunPosition vector to be mutated)
     if (skyRef.current?.material?.uniforms?.sunPosition) {
-      skyRef.current.material.uniforms.sunPosition.value.set(sunX, sunY, 50);
-    }
-
-    // Always daytime (Golden Hour)
-    if (isNight) {
-      setIsNight(false);
+      skyRef.current.material.uniforms.sunPosition.value.set(SUN_X, SUN_Y, 50);
+      appliedRef.current = true; // sky is the last thing to mount
     }
   });
 
@@ -776,25 +648,7 @@ function Scene({ room, vehicles, players, isDriver, nodes, isBusy, targetNode }:
 
       <Physics>
         {/* Environment & Map */}
-        <Ocean isNight={isNight} />
-        <Island />
-        <Road />
-        <StreetLights isNight={isNight} />
-        <Trees />
-        <Boulders />
-        <Bushes />
-        <GroundDetails />
-        <NodeMarkers />
-        <FishingDock />
-        <GasStation />
-        <SurfBeach />
-        <Lighthouse />
-        <DriftwoodVillage />
-        <Fences />
-        <Seagrass />
-        <WildflowerPatches />
-        <DriftwoodScatter />
-        <Clutter />
+        <StaticWorld />
         <Bonfire active={nodes['bonfire-circle']?.active ?? false} />
         <Campsite playersSleeping={nodes['campsite']?.count ?? 0} />
 
@@ -836,7 +690,7 @@ export default function App() {
   const [nodes, setNodes] = useState<Record<string, { active: boolean, count: number }>>({});
   const roomRef = useRef<Colyseus.Room | null>(null);
   const [radioPlaying, setRadioPlaying] = useState(false);
-  const activeAmbientAudio = useRef<{ stop: () => void } | null>(null);
+
   const radioAudioRef = useRef<HTMLAudioElement | null>(null);
   const [targetNode, setTargetNode] = useState<string | null>(null);
   
@@ -853,38 +707,6 @@ export default function App() {
     (window as any).ENGINE_SOUND_ENABLED = engineSound;
   }, [engineSound]);
 
-  // ── Ambient Audio Trigger (Synthetic) ──────────────────────────
-  useEffect(() => {
-    if (!roomRef.current) return;
-    const myPlayer = players[roomRef.current.sessionId];
-    if (!myPlayer) return;
-
-    if (activeAmbientAudio.current) {
-      activeAmbientAudio.current.stop();
-      activeAmbientAudio.current = null;
-    }
-
-    if (myPlayer.activeNode === 'surf-beach') {
-      activeAmbientAudio.current = startOceanAudio();
-    } else if (myPlayer.activeNode === 'bonfire-circle') {
-      // Fire crackle when at bonfire (especially when lit)
-      const isBonfireActive = nodes['bonfire-circle']?.active ?? false;
-      if (isBonfireActive) {
-        activeAmbientAudio.current = startFireCrackleAudio();
-      } else {
-        activeAmbientAudio.current = startCricketsAudio();
-      }
-    } else if (myPlayer.activeNode === 'campsite') {
-      activeAmbientAudio.current = startCricketsAudio();
-    }
-    
-    return () => {
-      if (activeAmbientAudio.current) {
-        activeAmbientAudio.current.stop();
-        activeAmbientAudio.current = null;
-      }
-    };
-  }, [players, nodes]);
 
   // ── Radio playback sync ─────────────────────────────────────────
   useEffect(() => {
@@ -1098,6 +920,8 @@ export default function App() {
 
           <Canvas
             shadows
+            dpr={[1, 1.5]}
+            gl={{ powerPreference: 'high-performance' }}
             camera={{ position: [5, 8, 18], fov: 65 }}
             style={{ position: 'absolute', inset: 0 }}
           >
