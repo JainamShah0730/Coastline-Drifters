@@ -11,13 +11,13 @@ export interface NodeDef {
 }
 
 export const NODES: NodeDef[] = [
-  { id: "rest-stop",         label: "Coastal Gas & Goods",  position: [  20, 0,  -20], radius: 10, color: "#f5a623" },
-  { id: "fishing-dock",      label: "Hidden Cove Pond",     position: [ 180, 0,  150], radius: 6,  color: "#4a90d9" },
-  { id: "surf-beach",        label: "Sunset Dunes",         position: [ -80, 0, -380], radius: 15, color: "#7ed321" },
-  { id: "campsite",          label: "Pine Grove Camp",      position: [-220, 0,   80], radius: 15, color: "#bd10e0" },
+  { id: "rest-stop",         label: "Coastal Gas & Goods",  position: [  20, 0,  -20], radius: 18, color: "#f5a623" },
+  { id: "fishing-dock",      label: "Hidden Cove Pond",     position: [ 180, 0,  150], radius: 28, color: "#4a90d9" },
+  { id: "surf-beach",        label: "Sunset Dunes",         position: [ -80, 0, -380], radius: 30, color: "#7ed321" },
+  { id: "campsite",          label: "Pine Grove Camp",      position: [-220, 0,   80], radius: 20, color: "#bd10e0" },
   { id: "bonfire-circle",    label: "Bonfire Circle",       position: [-100, 0,  200], radius: 20, color: "#d0021b" },
-  { id: "lighthouse",        label: "Beacon Point",         position: [ 400, 0,  380], radius: 15, color: "#f8e71c" },
-  { id: "driftwood-village", label: "Driftwood Cove",       position: [ 300, 0, -200], radius: 20, color: "#e8a882" },
+  { id: "lighthouse",        label: "Beacon Point",         position: [ 400, 0,  380], radius: 28, color: "#f8e71c" },
+  { id: "driftwood-village", label: "Driftwood Cove",       position: [ 300, 0, -200], radius: 30, color: "#e8a882" },
 ];
 
 // ── Terrain Height Calculation ────────────────────────────────────

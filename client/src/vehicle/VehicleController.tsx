@@ -63,9 +63,9 @@ function useKeys(isBusy: boolean) {
 }
 
 // ── Constants ─────────────────────────────────────────────────────
-const MAX_SPEED      = 28;  // m/s
-const ACCELERATION   = 18;
-const BRAKE_FORCE    = 40;
+const MAX_SPEED      = 35;  // m/s
+const ACCELERATION   = 22;
+const BRAKE_FORCE    = 45;
 const COAST_DRAG     = 10; // speed lost per second when coasting
 const TURN_SPEED     = 2.2;  // radians/s at full speed
 
@@ -75,21 +75,22 @@ const TURN_SPEED     = 2.2;  // radians/s at full speed
 // We treat trees, buildings, and hills as circles for simple collision
 const OBSTACLES: { cx: number; cz: number; r: number }[] = [
   // Fishing pond (water surface) and wooden dock
-  { cx: 180, cz: 130, r: 22 },
-  { cx: 180, cz: 146, r: 3 }, // Dock end
-  { cx: 180, cz: 151, r: 3 }, // Dock middle
-  { cx: 180, cz: 156, r: 3 }, // Dock start (shore)
-  // Bonfire Circle
-  { cx: -100, cz: 200, r: 2 },
-  // Campsite Tents
-  { cx: -220, cz: 80, r: 2 },
+  { cx: 180, cz: 130, r: 18 },
+  { cx: 180, cz: 146, r: 2.5 }, // Dock end
+  { cx: 180, cz: 151, r: 2.5 }, // Dock middle
+  { cx: 180, cz: 156, r: 2.5 }, // Dock start (shore)
+  // Bonfire Circle — only the stone ring is solid
+  { cx: -100, cz: 200, r: 3 },
+  // Campsite Tents — just the tent footprints
+  { cx: -220, cz: 76, r: 3 },  // Tent 1
+  { cx: -214, cz: 84, r: 3 },  // Tent 2
   // Lighthouse keeper's cottage
-  { cx: 390, cz: 385, r: 2 },
-  // Driftwood Village cottages
-  { cx: 290, cz: -205, r: 6 },
-  { cx: 308, cz: -208, r: 6 },
-  { cx: 295, cz: -190, r: 5 },
-  { cx: 312, cz: -192, r: 5 },
+  { cx: 388, cz: 388, r: 5 },
+  // Driftwood Village cottages — tighter to actual buildings
+  { cx: 290, cz: -205, r: 4 },
+  { cx: 308, cz: -208, r: 5 },
+  { cx: 295, cz: -190, r: 4 },
+  { cx: 312, cz: -192, r: 4 },
   // Eastern cliff formations
   { cx: 440, cz: -200, r: 25 },
   { cx: 455, cz: -80, r: 25 },
@@ -107,8 +108,10 @@ const OBSTACLES: { cx: number; cz: number; r: number }[] = [
   ...BOULDER_POSITIONS.map(b => ({ cx: b.pos[0], cz: b.pos[2], r: 0.8 * b.s })),
   // Street Lights
   ...STREET_LIGHT_POSITIONS.map(l => ({ cx: l.pos[0], cz: l.pos[2], r: 0.5 })),
-  // Gas station
-  { cx: 20, cz: -20, r: 4 },
+  // Gas station — building shell only, players can drive under the canopy
+  { cx: 20, cz: -27, r: 8 },   // Main building
+  { cx: 20, cz: -14, r: 1.5 }, // Pump island left
+  { cx: 20, cz: -14, r: 1.5 }, // Pump island right
   // Fences
   ...(() => {
     const obs: { cx: number; cz: number; r: number }[] = [];
